@@ -1,47 +1,77 @@
+from requests import get
 from bs4 import BeautifulSoup
+import os
 import pandas as pd
 
-import requests
-
-
-def get_blog_articles():
-    '''
-    Collects article info of the last five blog articles
-    on the Codeup blog and returns a dictionary
-    '''
-    url = 'https://codeup.com/blog/'
-    headers = {'User-Agent': 'Codeup Data Science'}
-    response = requests.get(url, headers=headers)
-
-    soup = BeautifulSoup(response.content, 'html.parser')
-    # get all titles
-    h2 = soup.find_all('h2')
-    # create a dictionary to hold the title and content of the article
-    blog_articles = {
-        'title':[],
-        'content':[],
-        'published_date':[]
-    }
-    for n in range(len(h2)-2):
-        #title
-        blog_articles['title'].append(h2[n].a.text)
-        soup2 = BeautifulSoup(requests.get(h2[n].a['href'], headers=headers).content, 'html.parser')
+def get_blog_articles_data(refresh=False):
+    
+    if not os.path.isfile('blog_articles.csv') or refresh:
         
-        #content
-        paragraphs = soup2.find('div', class_='entry-content').find_all('p')
-        content =''
-        for t in paragraphs:
-            if not t.text.startswith('*Codeup'):
-                content += f' {t.text}'
-            else:
-                break
-        blog_articles['content'].append(content)
+        url = 'https://codeup.com/blog/'
+        headers = {'User-Agent': 'Codeup Data Science'}
+        response = get(url, headers=headers)
+
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        links = [link['href'] for link in soup.select('h2 a[href]')]
+
+        articles = []
+
+        for url in links:
+
+            url_response = get(url, headers=headers)
+            soup = BeautifulSoup(url_response.text, 'html.parser')
+
+            title = soup.find('h1', class_='entry-title').text
+            content = soup.find('div', class_='entry-content').text.strip()
+
+            article_dict = {
+                'title': title,
+                'content': content
+            }
+
+            articles.append(article_dict)
         
-        # date
-        dates = soup2.find('span', class_='published')
-        date = ''
-        for d in dates:
-            date += d.text
-        blog_articles['published_date'].append(d)
+        blog_article_df = pd.DataFrame(articles)
         
-    return blog_articles
+        blog_article_df.to_csv('blog_articles.csv', index=False)
+        
+    return pd.read_csv('blog_articles.csv')
+
+def get_news_articles_data(refresh=False):
+    
+    if not os.path.isfile('news_articles.csv') or refresh:
+        
+        url = 'https://inshorts.com/en/read'
+        response = get(url)
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        categories = [li.text.lower() for li in soup.select('li')][1:]
+        categories[0] = 'national'
+
+        inshorts = []
+
+        for category in categories:
+
+            cat_url = url + '/' + category
+            response = get(url)
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            titles = [span.text for span in soup.find_all('span', itemprop='headline')]
+            contents = [div.text for div in soup.find_all('div', itemprop='articleBody')]
+
+            for i in range(len(titles)):
+
+                article = {
+                    'title': titles[i],
+                    'content': contents[i],
+                    'category': category,
+                }
+
+                inshorts.append(article)
+                
+        inshorts_article_df = pd.DataFrame(inshorts)
+        
+        inshorts_article_df.to_csv('news_articles.csv', index=False)
+                
+    return pd.read_csv('news_articles.csv')
